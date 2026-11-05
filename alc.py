@@ -200,12 +200,262 @@ def obtenerPose2D(Hj, K):
 
 # Funciones pedidas por el TP  ----------- Ejercicio 6
 
+# Funciones pedidas por el TP  ----------- Ejercicio 6 ------------- item a) --------------
+
+#  ---> No requiere código explícito 
+
+# Funciones pedidas por el TP  ----------- Ejercicio 6 ------------- item b) --------------
+
+def calculoLambdaMu(I0, J0):
+    """
+    Recibe los vectores I0 y J0
+    Devuelve los escalares lambda y mu
+    """
+    # Norma al cuadrado 
+    norma_I0 = np.sum(I0 * I0)
+    norma_J0 = np.sum(J0 * J0)
+
+    producto_interno_I0_J0 = np.sum(I0 * J0)
+
+    # numero complejo C, Lamnda * u = -I0 * J0 ? 
+    Re = norma_I0 - norma_J0
+    Im = -2.0 * producto_interno_I0_J0
+
+    # Meditar modulo_de_C
+    modulo_de_C = np.sqrt(Re * Re + Im * Im)
+
+    lam = np.sqrt((modulo_de_C + Re) / 2.0)
+
+    # Im solo nos inetresa para estimar el signo 
+    if Im < 0:
+        signo = -1.0
+    else:
+        signo = 1.0
+
+    mu = signo * np.sqrt((modulo_de_C - Re) / 2.0)
+    
+    return lam, mu
+
+# Funciones pedidas por el TP  ----------- Ejercicio 6 ------------- item c) --------------
+
+def calcularSalidaPOSIT(Is, Js, fx, mO, MO):
+    """
+    Recibe los vectores Is y Js, la distancia focal dada fx, el píxel m0 y el punto real M0 
+    Devuelve los ejes (i, j, k), la profundidad del punto de referencia Z0 y la pose (R, t)
+    """
+
+    # Calcado del marco teórico
+    norma_Is = norma(Is, 2)
+    norma_Js = norma(Js, 2)
+    Z0 = fx / norma_Is
+
+    i = Is / norma_Is
+    j = Js / norma_Js
+
+    k = np.array([
+        i[1]*j[2] - i[2]*j[1],
+        i[2]*j[0] - i[0]*j[2],
+        i[0]*j[1] - i[1]*j[0]
+    ])
+
+    R = np.zeros((3, 3))
+    R[0, :] = i
+    R[1, :] = j
+    R[2, :] = k
+
+    x0 = mO[0]
+    y0 = mO[1]
+
+    X0 = (Z0 / fx) * x0
+    Y0 = (Z0 / fx) * y0
+
+    OM0 = np.array([X0, Y0, Z0])
+        
+    t = OM0 - arroba(R, MO)
+        
+    return i, j, k, Z0, R, t
+
+# Funciones pedidas por el TP  ----------- Ejercicio 6 ------------- item d) --------------
+
+def evaluarPose(R, t, obj_vecs, img_vecs, K):
+    """
+    Recibe la pose (R, t), los puntos 3D (obj_vecs), los píxeles 2D (img_vecs) y la matriz K dada
+    Devuelve la cantidad de proyecciones válidas (Z > 0) y el RMS 
+    """
+    n = obj_vecs.shape[0]
+    validos = 0
+    suma_error_sq = 0.0
+
+    t = np.reshape(t, -1)
+    for i in range(n):
+
+        # Coordenadas de obajeto a cámara a través de la ec 1 
+        P_obj = obj_vecs[i]
+        P_cam = arroba(R, P_obj) + t
+
+        # La purga que dicta Selecciónde soluciones y factibilidad de la pg 20
+        if P_cam[2] > 0:
+            validos += 1
+
+        p_img = arroba(K, P_cam)
+
+
+        # (u, v) proyectado
+        u_proy = p_img[0] / p_img[2]
+        v_proy = p_img[1] / p_img[2]
+
+        # (u, v) sacado de la foto 
+        u_real = img_vecs[i, 0]
+        v_real = img_vecs[i, 1] 
+
+
+        # para rms completo, el arma dada por la pg 21 
+        error = (u_proy - u_real)**2 + (v_proy - v_real)**2
+        suma_error_sq += error
+
+    rms = np.sqrt(suma_error_sq/n)
+
+    return validos, rms 
+
+# Funciones pedidas por el TP  ----------- Ejercicio 6 ------------- item e) --------------
+
+def aplicarPOSIT(obj_vecs, img_vecs, K, MaxIt, atol):
+    """
+    Iteración POSIT
+    """
+    
+    N = obj_vecs.shape[0]
+
+    # Asumir el error inicial epsilon para cada P 
+    eps = np.zeros(N)
+
+    # ----------- acordate de quitar la columna label 
+    MO = obj_vecs[0]
+    a_vecs = obj_vecs - MO
+
+
+
+
+
+    # calculo de A+, para luego calcular I0 = A+ b 
+    hatU, hatSig, hatV = svd_reducida(a_vecs, k="max", tol=1e-15)
+
+    # Sing^+
+    r = len(hatSig)
+    Sig_inv = np.zeros((r, r))
+    for i in range(r):
+        Sig_inv[i, i] = 1.0 / hatSig[i]
+
+
+    # A^+ = V * Sing^+ * U^T         -------- dim = 3 x N 
+    hatV_Sing = arroba(hatV, Sig_inv)
+    A_pseudo_inv = arroba(hatV_Sing, transpuesta(hatU))
+
+
+
+
+
+    # desmenuzando la info de K 
+    fx = K[0,0]
+    u0 = K[0,2]
+    v0 = K[1,2]
 
 
 
 
 
 
+    # centrar las coordenadas x e y con u0 y v0 
+
+    x = img_vecs[:, 0] - u0
+    y = img_vecs[:, 1] - v0 
+    
+    mO = np.array([x[0], y[0]])
+
+
+
+
+    # vector normal al piso y unitario 
+    vector_normal = np.array([0.0, 0.0, 1.0])
+
+
+    mejor_R = np.eye(3) # Matriz
+    mejor_t = np.zeros(3) # vector
+
+    # arranca el bucle en el punto 1 de iteración POSIT
+
+    for _ in range(MaxIt):
+
+        # 1,) Construcción de b_u y b_v
+        b_u = x * (1.0 + eps) - x[0]
+        b_v = y * (1.0 + eps) - y[0]
+ 
+        # 2.)resolver los sistemas I0 = A+ * b 
+        I0 = arroba(A_pseudo_inv, b_u)
+        J0 = arroba(A_pseudo_inv, b_v)
+
+        # 3.) caso coplanar
+        lam, mu = calculoLambdaMu(I0, J0)
+
+        # lo casos posibles se dividen en solo 2 por el producto de signos, para que cuadre con la ec
+
+        # Positivos
+        I1 = I0 + lam * vector_normal
+        J1 = J0 + mu * vector_normal
+        # RAMA 2 (con -mu)
+        I2 = I0 - lam * vector_normal
+        J2 = J0 - mu * vector_normal
+
+        # 4.) recuperar R y t y todo lo demás, para los dos casos 
+        _, _, k1, Z01, R1, t1 = calcularSalidaPOSIT(I1, J1, fx, mO, MO)
+        _, _, k2, Z02, R2, t2 = calcularSalidaPOSIT(I2, J2, fx, mO, MO)
+
+        # y evaluar pose tmb
+
+        validos1, rms1 = evaluarPose(R1, t1, obj_vecs, img_vecs, K)
+        validos2, rms2 = evaluarPose(R2, t2, obj_vecs, img_vecs, K)
+
+        # y buscamos las mejor pose tomando como primera prioridad la cantidad de Z validos 
+        # si Z negativo es descartado en evaluar pose 
+
+        if validos1 == N and validos2 == N:
+            # Desempat por el menor error RMS
+            if rms1 < rms2:
+                mejor_R, mejor_t, mejor_eje_k, mejor_Z0 = R1, t1, k1, Z01
+            else:
+                mejor_R, mejor_t, mejor_eje_k, mejor_Z0 = R2, t2, k2, Z02
+        elif validos1 == N:
+            mejor_R, mejor_t, mejor_eje_k, mejor_Z0 = R1, t1, k1, Z01
+        elif validos2 == N:
+            mejor_R, mejor_t, mejor_eje_k, mejor_Z0 = R2, t2, k2, Z02
+        else:
+            # Si ninguna sirve compleatmente, menor error 
+            if rms1 < rms2:
+                mejor_R, mejor_t, mejor_eje_k, mejor_Z0 = R1, t1, k1, Z01
+            else:
+                mejor_R, mejor_t, mejor_eje_k, mejor_Z0 = R2, t2, k2, Z02
+
+        #5} calcular el coso 5, no se como carajos se llama
+
+        eps_actual = np.zeros(N)
+        for i in range(N):
+
+            # eps_i = (1 / Z0) * (a_i · k)  --> k vector direccional, el que sale del producto cruz i x j
+            eps_actual[i] = (1.0 / mejor_Z0) * np.sum(a_vecs[i] * mejor_eje_k) 
+
+        # 6) el máximo error en cada punto 
+        diferencia = np.max(np.abs(eps_actual - eps))
+
+        if diferencia < atol:
+            print(f"la diferencia fue menor antes de terminar MaxIt, RMS_1 = {rms1}, RMS_2 = {rms2}")
+            break
+
+        eps = eps_actual
+    return mejor_R, mejor_t
+
+# Funciones pedidas por el TP  ----------- Ejercicio 6 ------------- item f) --------------
+
+#  ---> No requiere código explícito 
 
 
 
